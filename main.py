@@ -1,23 +1,31 @@
 import os
-import argparse
-import numpy as np
 from bilm.training import train, test, load_options_latest_checkpoint, load_vocab
 from bilm.data import LMDataset, BidirectionalLMDataset
+# The following imports may or may not be required, depending on which functions are executed
+import argparse
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
 
 # Constants:
-FULL_CORPUS = "all_sentences_lower_lemmatized.txt"
+FULL_CORPUS = "all_sentences_lower.txt"
 CORPUS_MINUS_TEST_SET = "corpus_minus_test_set.txt"
 TEST_SET = "full_test_set.txt"
 VOCAB_FILE = "full_vocab.txt"
+TEST_SET_PERCENTAGE_SIZE = 0.05
 MAX_VOCAB_TOKENS = 800000
 
 BATCH_SIZE = 128
-N_GPUS = 3
-N_TRAIN_TOKENS = 1475855582
+# IMPORTANT: SET N_GPUS and N_CHARACTERS ACCORDINGLY
+# N_GPUS depends on whatever hardware is being used to run this program.
+# N_CHARACTERS should be 261 for training, or 262 for prediction.
+N_GPUS = 0
+N_CHARACTERS = 261
+N_TRAIN_TOKENS = 1475857948
 N_EPOCHS = 1
 
 # Debug one-off. Create a small corpus useable for quicker testing, plus a small test set
-# The full version is 81,164,407 lines.
 def createSmallerCorpus(totalLines=1000000):
     lineCount = 0
     corpusStartingLineNumber = totalLines // 10
@@ -33,8 +41,9 @@ def createSmallerCorpus(totalLines=1000000):
                 return
             lineCount += 1
 
+
 # Support one-off function. Creates a test set as a percentage of
-def createTestSet(input_corpus=FULL_CORPUS, output_corpus=CORPUS_MINUS_TEST_SET, output_test=TEST_SET, percentage=0.05):
+def createTestSet(input_corpus=FULL_CORPUS, output_corpus=CORPUS_MINUS_TEST_SET, output_test=TEST_SET, percentage=TEST_SET_PERCENTAGE_SIZE):
     moduloPercent = int(percentage*100)
     lineCount = 0
     with open(input_corpus, "r", encoding="utf-8") as f_in, \
@@ -51,12 +60,20 @@ def createTestSet(input_corpus=FULL_CORPUS, output_corpus=CORPUS_MINUS_TEST_SET,
 # Support one-off. Create vocabulary based on corpus.
 # Based on https://github.com/PhilipMay/de-wiki-text-corpus-tools and https://github.com/t-systems-on-site-services-gmbh/german-elmo-model
 # Note that the latter page recommends NOT having a vocabulary larger than 800k tokens, lest we run into out-of-memory errors.
-# For the current FULL_CORPUS, we get the following:
+#
+# For a LEMMATIZED version of the full corpus, we get the following values:
 # Found so many token: 4724931
 # Selecting so many of the top token: 800000
 # New number of token: 800000
 # Removed so many token: 3924931
 # Token count of input file: 1475855582
+#
+# For a NON-LEMMATIZED version of the full corpus (which is the DEFAULT right now), we get the following:
+# Found so many token: 5993158
+# Selecting so many of the top token: 800000
+# New number of token: 800000
+# Removed so many token: 5193158
+# Token count of input file: 1475857948
 def vocab_file_writer():
     vocab_dict = {}
     token_count = 0
@@ -101,14 +118,10 @@ def vocab_file_writer():
 def train_elmo(save_dir):
     vocab = load_vocab(VOCAB_FILE, 50)
 
-    # define the options
-    #batch_size = 128  # batch size for each GPU
     batch_size = BATCH_SIZE
-    # n_gpus = 3
     n_gpus = N_GPUS
 
     # number of tokens in training data (this for 1B Word Benchmark)
-    # n_train_tokens = 21420348
     n_train_tokens = N_TRAIN_TOKENS
 
     options = {
@@ -124,7 +137,7 @@ def train_elmo(save_dir):
                                  [6, 512],
                                  [7, 1024]],
                      'max_characters_per_token': 50,
-                     'n_characters': 261,
+                     'n_characters': N_CHARACTERS,
                      'n_highway': 2},
 
         'dropout': 0.1,
@@ -139,8 +152,7 @@ def train_elmo(save_dir):
 
         'all_clip_norm_val': 10.0,
 
-        # 'n_epochs': 10,
-        'n_epochs': 1,
+        'n_epochs': N_EPOCHS,
         'n_train_tokens': n_train_tokens,
         'batch_size': batch_size,
         'n_tokens_vocab': vocab.size,
@@ -165,10 +177,8 @@ def run_test(save_dir):
         max_word_length = options['char_cnn']['max_characters_per_token']
     else:
         max_word_length = None
-    #vocab = load_vocab(vocab_file, max_word_length)
     vocab = load_vocab(VOCAB_FILE, max_word_length)
 
-    #test_prefix = test_pref
     test_prefix = CORPUS_MINUS_TEST_SET
 
     kwargs = {
@@ -222,6 +232,12 @@ def restart(save_dir):
 
 ### MAIN STARTS
 
+# Construction code
+# Should only be run when explicitly required
+# createTestSet()
+# vocab_file_writer()
+
+# Training code
 train_elmo(os.getcwd())
 lastComplexity = run_test(os.getcwd())
 newComplexity = lastComplexity
@@ -233,3 +249,5 @@ while ( newComplexity <= lastComplexity ):
     print(complString)
 
 
+# Evaluation code
+# ...
